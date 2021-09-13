@@ -1,48 +1,42 @@
 //Board: Arduino nano ble
 //Sensor: GY-AS7263
 //QR: GM65-s
-//SD: Waveshare micro sd
 #include "AP_29demo.h"
-
+#include <Arduino.h>  
 #include <ArduinoBLE.h>
-
 #include <Wire.h>
 #include "Adafruit_AS726x.h"
-#include <Arduino.h>                              
-#include <wiring_private.h>
-#include <SPI.h>
-#include <SD.h>
 
-//Red and green led
-const int Red_pin = 2;
-const int Green_pin = 3;
+//LED and BTN
+const int Btn_Pin = 2;
+const int Red_pin = 3;
+const int Green_pin = 4;
 
-//create the object
+//Sensor & Multiplexer
 #define TCAADDR 0x70
 Adafruit_AS726x ams1;
 Adafruit_AS726x ams2;
-const int tca_ams1 = 0;
-const int tca_ams2 = 1;
+const int tca_ams1 = 0; //sensor U1
+const int tca_ams2 = 1; // sensor U2
 
-//buffer to hold raw values
-uint16_t sensorValues[AS726x_NUM_CHANNELS];
-uint16_t sensorValuesSpecimen[AS726x_NUM_CHANNELS];
-uint16_t dry_sensorValues[AS726x_NUM_CHANNELS];
-uint16_t dry_sensorValuesSpecimen[AS726x_NUM_CHANNELS];
-uint16_t cf_v, cf_b, sf_v, sf_b;
+//Buffer to hold raw values
+uint16_t sensorValues[AS726x_NUM_CHANNELS]; //wet control
+uint16_t sensorValuesSpecimen[AS726x_NUM_CHANNELS]; //wet test
+uint16_t dry_sensorValues[AS726x_NUM_CHANNELS]; //dry control
+uint16_t dry_sensorValuesSpecimen[AS726x_NUM_CHANNELS]; //dry test
 
-String result;
-int result_switch = 0;
-const int buttonPin = 4; //D4
-double margint;
 uint8_t board_temp1;
 uint8_t board_temp2;
 
-//Settings
+String result;
+int result_switch = 0;
+
+//Calculation settings
 float stain_margin_percent=4;
 float max_control_change_percent=4;
 int16_t max_negative_stain_margin_percent=20;
 uint16_t min_reading_threshold=40;
+double margint;
 
 //Eink
 /*
@@ -57,8 +51,7 @@ uint16_t min_reading_threshold=40;
 const int BUSY_Pin = 7; 
 const int RES_Pin = 8; 
 const int DC_Pin = 9; 
-//const int CS_Pin = 10; 
-const int CS_Pin = 5; //D5
+const int CS_Pin = 10;
 const int SCK_Pin = 13; 
 const int SDI_Pin = 11; 
 
@@ -121,27 +114,15 @@ void EPD_Dis_Part(unsigned int x_start,unsigned int y_start,const unsigned char 
 
 //QR reader
 /*
- * Tx black p2
- * Rx yellow p1
+ * Tx - P5 
+ * Rx - P4
  */
-int incomingByte = 0; // for incoming serial data
+int incomingByte = 0;
 String readString = "";
 String decodeString = "";
-#define timer 0.1 // 0.2 = 12s , running time of the while loop in minutes
 boolean QR_received = false;
-//boolean stringComplete = false;
+#define timer 0.1 // 0.2 = 12s , running time of the while loop in minutes
 
-//SD card
-/*
- * Miso p12
- * Mosi p11
- * Clk p13
- * Cs p10
-
-File myFile;
-const int SdSelect = 10;
-String filename = "test.txt";
- */
 void tcaselect(uint8_t i) {
   if (i > 7) return;
  
@@ -156,18 +137,16 @@ void setup() {
   pinMode(DC_Pin, OUTPUT);        
   pinMode(SCK_Pin, OUTPUT);    
   pinMode(SDI_Pin, OUTPUT);
-
   pinMode(CS_Pin, OUTPUT);
-  //pinMode(SdSelect, OUTPUT);
   
-  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(Btn_Pin, INPUT_PULLUP);
   pinMode(Red_pin, OUTPUT);
   pinMode(Green_pin, OUTPUT);
   
   Serial.begin(9600);
-  while(!Serial); //REMOVE LATER
+  while(!Serial); //Only for debug mode
 
-  /Multiplexer breakout
+  //Check Multiplexer breakout
   Wire.begin();
   Serial.println("\nTCAScanner ready!");
   
@@ -185,7 +164,7 @@ void setup() {
     }
   }
   
-  //NIR 
+  //Initialise NIR sensors 
   tcaselect(tca_ams1);
   if(!ams1.begin()){
     Serial.println("could not connect to sensor! Please check your wiring.");
@@ -200,33 +179,40 @@ void setup() {
   }
   delay(100);
   
-  //QR serial
+  //Initialise QR serial
   Serial1.begin(9600);
 }
 
 void loop() {
-  //unsigned char fen_L,fen_H,miao_L,miao_H;
-  //----------------Initialise
+  //Initialise: clear data from previous test
   Serial.println("Initialisation");
   digitalWrite(Red_pin, LOW);
   digitalWrite(Green_pin, LOW);
+  QR_received = false;
 
+  //Greeting information
+  EPD_HW_Init(); //Electronic paper initialization
+  EPD_WhiteScreen_ALL(gImage_main); //Refresh the picture in full screen
+  delay(100);
+  
+  //Check board temperatures
   tcaselect(tca_ams1);
   board_temp1 = ams1.readTemperature();
-
   tcaselect(tca_ams2);
   board_temp2 = ams2.readTemperature();
   Serial.print("Temperature: S1 "); Serial.print(board_temp1);  Serial.print(" S2 "); Serial.println(board_temp2);
 
-  //MOVE TO SETUP. REPEATS AFTER LOOP
-  //-------------Start test
-  Serial.println("NEUOME");
-  EPD_HW_Init(); //Electronic paper initialization
-  EPD_WhiteScreen_ALL(gImage_main); //Refresh the picture in full screen
-  delay(100);
+  //further testing required, could be removed
+  while ((board_temp1>25)|| (board_temp2>25)){
+    delay(500);
+  }
+  //TEXT: Initialisation complete
   waitForButtonPress();
 
-  //------------Get QR code
+  //BLE central connection
+  //
+
+  //QR code
   EPD_HW_Init(); //Electronic paper initialization
   EPD_WhiteScreen_ALL(gImage_qr); //Refresh the picture in full screen
   delay(100);
@@ -240,8 +226,7 @@ void loop() {
   }
   Serial.println(decodeString);
 
-  //------------DRY CONTROL----------------------
-  Serial.println("Dry control and press button");
+  //Step 1: Dry reading
   EPD_HW_Init(); //Electronic paper initialization
   EPD_WhiteScreen_ALL(gImage_step1); //Refresh the picture in full screen
   delay(100);
@@ -252,7 +237,7 @@ void loop() {
   tcaselect(tca_ams2);
   readSpectrometer(2, dry_sensorValuesSpecimen);
   
-  if(dry_sensorValuesSpecimen[AS726x_VIOLET] < 100){
+  if((dry_sensorValuesSpecimen[AS726x_VIOLET] < 100) || (dry_sensorValues[AS726x_VIOLET] < 100)){
     EPD_HW_Init(); //Electronic paper initialization
     EPD_WhiteScreen_ALL(gImage_nostrip); //Refresh the picture in full screen
     delay(100);
@@ -260,19 +245,8 @@ void loop() {
     Serial.println("Error no strip");
     return;
   }
-  else if (dry_sensorValues[AS726x_VIOLET] < 100){
-    EPD_HW_Init(); //Electronic paper initialization
-    EPD_WhiteScreen_ALL(gImage_nostrip); //Refresh the picture in full screen
-    delay(100);
-    
-    Serial.println("Error no strip");
-    return;
-  }
-  
-  //cooloff();
 
-  //------------SAMPLED CONTROL----------------------
-  Serial.println("Sampled control and press button");
+  //Step 2: Wet reading
   EPD_HW_Init(); //Electronic paper initialization
   EPD_WhiteScreen_ALL(gImage_step3); //Refresh the picture in full screen
   delay(100);
@@ -283,7 +257,7 @@ void loop() {
   tcaselect(tca_ams2);
   readSpectrometer(2, sensorValuesSpecimen);
 
-  if(sensorValues[AS726x_VIOLET] < 100){
+  if((sensorValues[AS726x_VIOLET] < 100)||(sensorValuesSpecimen[AS726x_VIOLET] < 100)){
     EPD_HW_Init(); //Electronic paper initialization
     EPD_WhiteScreen_ALL(gImage_nostrip); //Refresh the picture in full screen
     delay(100);
@@ -291,23 +265,10 @@ void loop() {
     Serial.println("Error no strip");
     return;
   }
-  else if(sensorValuesSpecimen[AS726x_VIOLET] < 100){
-    EPD_HW_Init(); //Electronic paper initialization
-    EPD_WhiteScreen_ALL(gImage_nostrip); //Refresh the picture in full screen
-    delay(1000);
-    
-    Serial.println("Error no strip");
-    return;
-  }
-  //cooloff();
 
-//----------RESULT test and restart
-  //delay(100);
+  //Step 3: Compute result
   computeTest();
-  Serial.print("YOUR TEST RESULT: ");
-  Serial.print(result);
-  Serial.println("");
-
+  Serial.print("YOUR TEST RESULT: "); Serial.print(result); Serial.println("");
   switch(result_switch){
     case 0:
       break;
@@ -332,15 +293,11 @@ void loop() {
       delay(100);
       break;
   }
-  waitForButtonPress();
-/*
-  //REPLACE WITH END OF TEST
-  EPD_HW_Init(); //Electronic paper initialization
-  EPD_WhiteScreen_ALL(gImage_main); //Refresh the picture in full screen
-  delay(100);*/
-  
-  Serial.println("done...waiting for button press");
-  QR_received = false;
+
+  //BLE transfer result
+
+  //End of test
+  Serial.println("End of test, press btn for new test");
   waitForButtonPress();
 }
 
@@ -353,8 +310,7 @@ void readSpectrometer(int n_ams, uint16_t ref[]){
     }
     ams1.readRawValues(ref);
     ams1.drvOff();
-    Serial.print("reading=");
-    Serial.println(ref[AS726x_VIOLET]);
+    Serial.print("reading="); Serial.println(ref[AS726x_VIOLET]);
   }
   else if (n_ams == 2){
     ams2.drvOn();
@@ -364,8 +320,10 @@ void readSpectrometer(int n_ams, uint16_t ref[]){
     }
     ams2.readRawValues(ref);
     ams2.drvOff();
-    Serial.print("reading=");
-    Serial.println(ref[AS726x_VIOLET]);
+    Serial.print("reading="); Serial.println(ref[AS726x_VIOLET]);
+  }
+  else{
+    Serial.print("Error, undefined sensor");
   }
 }
 
@@ -374,18 +332,12 @@ void computeTest(){
   int16_t test_variance = (specimen_diff*1000.0)/(dry_sensorValuesSpecimen[AS726x_VIOLET]*1.0);
   int16_t dry_diff = dry_sensorValues[AS726x_VIOLET] - sensorValues[AS726x_VIOLET];
   int16_t control_variance =  (dry_diff*1000.0)/dry_sensorValues[AS726x_VIOLET]*1.0;
-  delay(100);
   margint = test_variance;
   
-  Serial.println(dry_sensorValues[AS726x_VIOLET]);
-  Serial.println(dry_sensorValuesSpecimen[AS726x_VIOLET]);
-  Serial.println(sensorValues[AS726x_VIOLET]);
-  Serial.println(sensorValuesSpecimen[AS726x_VIOLET]);
-  Serial.print("control_variance");
-  Serial.println(control_variance);
-  Serial.print("test_variance");
-  Serial.println(test_variance);   
-
+  Serial.print("Dry control and test"); Serial.print(dry_sensorValues[AS726x_VIOLET]); Serial.print(" "); Serial.println(dry_sensorValuesSpecimen[AS726x_VIOLET]);
+  Serial.print("Wet control and test"); Serial.print(sensorValues[AS726x_VIOLET]); Serial.print(" "); Serial.println(sensorValuesSpecimen[AS726x_VIOLET]);
+  Serial.print("control_variance ");Serial.print(control_variance); Serial.print(" test_variance ");Serial.println(test_variance); 
+  
   //result switch: 1 repeat test, 2 positive, 3 negative, 4 ambigious
   // in case control increases and is more than 1 percent
   if(control_variance < -10){
@@ -401,14 +353,14 @@ void computeTest(){
     return;
   }
 
-
   if(sensorValuesSpecimen[AS726x_VIOLET] < dry_sensorValuesSpecimen[AS726x_VIOLET]*0.99){
     if(abs(test_variance) >= stain_margin_percent*10){
       result=String("Positive");
       result_switch = 2;
       //digitalWrite(A3, HIGH);     
       digitalWrite(Green_pin, HIGH);  
-    } else {
+    } 
+    else {
       result=String("Ambiguous");
       result_switch = 4;
       //digitalWrite(A3, LOW);
@@ -417,7 +369,6 @@ void computeTest(){
       digitalWrite(Green_pin, LOW);
     }
   } 
-  
   else {
     if(abs(test_variance) >= max_negative_stain_margin_percent*10){
       result = String("REPEAT TEST (t inc)");
@@ -431,24 +382,8 @@ void computeTest(){
   }
 }
 
-void cooloff(){
-  Serial.println("Processing cooloff");
-  //delay(5000);
-  tcaselect(tca_ams1);
-  uint8_t t1 = ams1.readTemperature();
-
-  tcaselect(tca_ams2);
-  uint8_t t2 = ams2.readTemperature();
-  
-  Serial.print("Temp: t1"); Serial.print(t1); Serial.print(" t2"); Serial.println(t2);
-  
-  while((ams1.readTemperature() > board_temp1+3) && (ams2.readTemperature() > board_temp2+3)){
-    delay(1000);
-  }
-}
-
 void waitForButtonPress(){
-  while(digitalRead(buttonPin)==HIGH){
+  while(digitalRead(Btn_Pin)==HIGH){
     delay(10);
   }
   // buffer the input read
@@ -491,22 +426,7 @@ void QR_decoder() {
     }
   }
 }
-/*
-void SD_write(){
-//write file
-  myFile = SD.open(filename, FILE_WRITE);
-  if (myFile) {
-    Serial.print("Writing to ");
-    Serial.print(filename);
-    myFile.println("testing 1, 2, 3.");
-    myFile.close();
-    Serial.println("Writing done");
-  } 
-  else {
-    Serial.println("error opening test.txt");
-  }
-}
-*/
+
 //------------------------Eink functions
 ///////////////////EXTERNAL FUNCTION////////////////////////////////////////////////////////////////////////
 /////////////////////delay//////////////////////////////////////
