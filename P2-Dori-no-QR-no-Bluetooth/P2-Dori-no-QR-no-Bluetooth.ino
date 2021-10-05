@@ -25,8 +25,10 @@ uint16_t sensorValuesSpecimen[AS726x_NUM_CHANNELS]; //wet test
 uint16_t dry_sensorValues[AS726x_NUM_CHANNELS]; //dry control
 uint16_t dry_sensorValuesSpecimen[AS726x_NUM_CHANNELS]; //dry test
 
-uint8_t board_temp0;
-uint8_t board_temp1;
+uint8_t base_temp0;
+uint8_t base_temp1;
+//uint8_t board_temp0;
+//uint8_t board_temp1;
 
 String result;
 int result_switch = 0;
@@ -162,6 +164,13 @@ void loop() {
   digitalWrite(Red_pin, LOW);
   digitalWrite(Green_pin, LOW);
 
+  //Record base temperature
+  tcaselect(tca_ams0);
+  base_temp0= ams0.readTemperature();
+
+  tcaselect(tca_ams1);
+  base_temp1= ams1.readTemperature();
+  
   //TEXT: Greeting information & please press to start test
   EPD_HW_Init();
   EPD_WhiteScreen_ALL(gImage_neuome);
@@ -269,6 +278,12 @@ void readSpectrometer(int n_ams, uint16_t ref[]){
     }
     ams0.readRawValues(ref);
     ams0.drvOff();
+    
+    while(ams0.readTemperature() > base_temp0+3){
+      Serial.println("temperature delay");
+      delay(1000);
+    }
+    
     Serial.print("reading="); Serial.println(ref[AS726x_VIOLET]);
   }
   else if (n_ams == 1){
@@ -279,6 +294,11 @@ void readSpectrometer(int n_ams, uint16_t ref[]){
     }
     ams1.readRawValues(ref);
     ams1.drvOff();
+
+    while(ams1.readTemperature() > base_temp1+3){
+      Serial.println("temperature delay");
+      delay(1000);
+    }
     Serial.print("reading="); Serial.println(ref[AS726x_VIOLET]);
   }
   else{
