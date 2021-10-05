@@ -121,7 +121,7 @@ void setup() {
   pinMode(Green_pin, OUTPUT);
   
   Serial.begin(9600);
-  //while(!Serial); //Only for debug mode
+  while(!Serial); //Only for debug mode
 
   //Check Multiplexer breakout: verification in case board does not see sensors
   Wire.begin();
@@ -181,7 +181,7 @@ void loop() {
   
   if((dry_sensorValuesSpecimen[AS726x_VIOLET] < 100) || (dry_sensorValues[AS726x_VIOLET] < 100)){
     EPD_HW_Init(); //Electronic paper initialization
-    EPD_WhiteScreen_ALL(gImage_nostrip); //Refresh the picture in full screen
+    EPD_WhiteScreen_ALL(gImage_no_strip); //Refresh the picture in full screen
     delay(100);
     
     Serial.println("Error no strip");
@@ -207,7 +207,7 @@ void loop() {
 
   if((sensorValues[AS726x_VIOLET] < 100)||(sensorValuesSpecimen[AS726x_VIOLET] < 100)){
     EPD_HW_Init();
-    EPD_WhiteScreen_ALL(gImage_nostrip);
+    EPD_WhiteScreen_ALL(gImage_no_strip);
     delay(100);
     
     Serial.println("Error no strip");
